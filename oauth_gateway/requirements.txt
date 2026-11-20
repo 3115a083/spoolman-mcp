@@ -1,0 +1,2 @@
+# Pin FastMCP due to the GitHubProvider verifier integration used by this service.
+fastmcp==4.2.2

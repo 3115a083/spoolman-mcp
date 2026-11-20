@@ -1,0 +1,36 @@
+# Separate Dockge stack; do not replace the already running spoolman-mcp stack.
+services:
+  spoolman-oauth:
+    image: spoolman-mcp-oauth:local
+    build:
+      context: .
+      dockerfile: oauth_gateway/Dockerfile
+    restart: unless-stopped
+    init: true
+    ports:
+      - "127.0.0.1:18789:8080"
+    environment:
+      FASTMCP_HOME: /data
+      OAUTH_PUBLIC_URL: ${OAUTH_PUBLIC_URL:?Set OAuth public URL}
+      MCP_BACKEND_URL: ${MCP_BACKEND_URL:?Set existing protected endpoint URL}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:?Set GitHub OAuth client ID}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:?Set GitHub OAuth client secret}
+      GITHUB_OWNER_ID: ${GITHUB_OWNER_ID:?Set authorized numeric GitHub account ID}
+      OAUTH_JWT_SIGNING_KEY: ${OAUTH_JWT_SIGNING_KEY:?Set random JWT signing secret}
+      PANGOLIN_ACCESS_TOKEN_ID: ${PANGOLIN_ACCESS_TOKEN_ID:?Set resource access token ID}
+      PANGOLIN_ACCESS_TOKEN: ${PANGOLIN_ACCESS_TOKEN:?Set resource access token}
+      MCP_BACKEND_API_KEY: ${MCP_BACKEND_API_KEY:?Set existing MCP proxy key}
+    volumes:
+      - oauth_state:/data
+    read_only: true
+    user: "10001:10001"
+    tmpfs:
+      - /tmp:rw,nosuid,noexec,size=32m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 128
+    mem_limit: 512m
+volumes:
+  oauth_state:
