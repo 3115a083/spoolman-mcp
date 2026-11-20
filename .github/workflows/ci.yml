@@ -1,0 +1,19 @@
+name: Test MCP container
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate fail-closed configuration
+        run: sh scripts/test-config.sh
+      - name: Build pinned upstream and proxy
+        run: docker build --pull -t spoolman-mcp:test .
+      - name: Test HTTP authentication and MCP initialization
+        run: sh scripts/test-container.sh spoolman-mcp:test
