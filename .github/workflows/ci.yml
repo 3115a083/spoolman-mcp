@@ -1,4 +1,4 @@
-name: Test MCP container
+name: Test MCP container and OAuth gateway
 on:
   pull_request:
   push:
@@ -6,7 +6,7 @@ on:
 permissions:
   contents: read
 jobs:
-  test:
+  backend:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -17,3 +17,26 @@ jobs:
         run: docker build --pull -t spoolman-mcp:test .
       - name: Test HTTP authentication and MCP initialization
         run: sh scripts/test-container.sh spoolman-mcp:test
+  oauth:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install pinned OAuth library
+        run: python -m pip install -r oauth_gateway/requirements.txt
+      - name: Check Python syntax
+        run: python -m compileall -q oauth_gateway
+      - name: Run config, GitHub owner, and tool policy tests
+        run: python -m unittest discover -s oauth_gateway/tests -v
+      - name: Build OAuth gateway image
+        run: docker build -f oauth_gateway/Dockerfile -t spoolman-mcp-oauth:test .
+      - name: Require secrets at startup
+        run: |
+          if docker run --rm spoolman-mcp-oauth:test > /tmp/oauth-logs 2>&1; then
+            echo "FAIL: unauthenticated OAuth gateway started" >&2
+            exit 1
+          fi
+          echo "Gateway fails closed on missing secrets"
