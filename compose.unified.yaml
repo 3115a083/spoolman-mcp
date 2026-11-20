@@ -1,4 +1,4 @@
-# Staging: one container, one listener, same future external hostname.
+# Staging: one container, one listener. MCP path /MCP, OAuth paths /auth/*.
 # Start on 18789 until you deliberately migrate the Pangolin target to it.
 # Do NOT stop the working original stack until OAuth is independently tested.
 services:

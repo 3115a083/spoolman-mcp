@@ -17,8 +17,11 @@ from fastmcp.server.middleware import Middleware, MiddlewareContext
 from fastmcp.server.providers.proxy import FastMCPProxy, ProxyClient
 from starlette.requests import Request
 from starlette.responses import PlainTextResponse
+from starlette.routing import Route
 
 UPSTREAM_SCRIPT = "/app/spoolman/dist/index.js"
+MCP_PATH = "/MCP"
+OAUTH_PATH = "/auth"
 
 # Server-side allowlist, even when a client guesses a forbidden tool name.
 READ_ONLY_TOOLS = frozenset({
@@ -111,6 +114,39 @@ class OwnerOnlyGitHubVerifier(GitHubTokenVerifier):
         return verified
 
 
+class PathScopedGitHubProvider(GitHubProvider):
+    """Keep OAuth operations under /auth, serving RFC metadata at /.well-known.
+
+    FastMCP's built-in OAuth routes use origin-root paths even if base_url
+    contains a path. Remap route registrations to match their advertised URLs.
+    This must remain covered by integration tests when updating FastMCP.
+    """
+
+    def get_routes(self, mcp_path: str | None = None) -> list[Route]:
+        if mcp_path != MCP_PATH:
+            raise RuntimeError("Unexpected MCP path: refusing to expose OAuth routes")
+        routes = super().get_routes(mcp_path)
+        scoped = []
+        for route in routes:
+            if not isinstance(route, Route):
+                raise RuntimeError("Unexpected OAuth route type; refusing to start")
+            if route.path == "/.well-known/oauth-authorization-server":
+                path = "/.well-known/oauth-authorization-server/auth"
+            elif route.path.startswith("/.well-known/"):
+                # RFC 9728 must remain at the domain root for MCP discovery.
+                path = route.path
+            else:
+                path = f"{OAUTH_PATH}{route.path}"
+            scoped.append(Route(
+                path=path,
+                endpoint=route.endpoint,
+                methods=list(route.methods) if route.methods is not None else None,
+                name=route.name,
+                include_in_schema=route.include_in_schema,
+            ))
+        return scoped
+
+
 class ReadOnlyPolicy(Middleware):
     async def on_list_tools(self, context: MiddlewareContext, call_next):
         tools = await call_next(context)
@@ -123,10 +159,13 @@ class ReadOnlyPolicy(Middleware):
 
 
 def build_server(cfg: Config) -> FastMCPProxy:
-    auth = GitHubProvider(
+    auth = PathScopedGitHubProvider(
         client_id=cfg.github_client_id,
         client_secret=cfg.github_client_secret,
-        base_url=cfg.public_url,
+        base_url=f"{cfg.public_url}{OAUTH_PATH}",
+        resource_base_url=cfg.public_url,
+        issuer_url=f"{cfg.public_url}{OAUTH_PATH}",
+        redirect_path="/callback",
         jwt_signing_key=cfg.signing_key,
         required_scopes=["user"],
         require_authorization_consent=True,
@@ -167,7 +206,7 @@ def build_server(cfg: Config) -> FastMCPProxy:
 def main() -> None:
     config = Config.from_env()
     server = build_server(config)
-    server.run(transport="http", host="0.0.0.0", port=8080)
+    server.run(transport="http", path=MCP_PATH, host="0.0.0.0", port=8080)
 
 
 if __name__ == "__main__":

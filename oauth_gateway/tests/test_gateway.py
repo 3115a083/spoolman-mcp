@@ -11,7 +11,7 @@ from fastmcp.server.middleware import MiddlewareContext
 from fastmcp.client.transports import StdioTransport
 
 from oauth_gateway.app import (
-    Config, OwnerOnlyGitHubVerifier, ReadOnlyPolicy, UPSTREAM_SCRIPT, build_server
+    Config, OwnerOnlyGitHubVerifier, ReadOnlyPolicy, UPSTREAM_SCRIPT, MCP_PATH, OAUTH_PATH, build_server
 )
 
 SETTINGS = {
@@ -60,6 +60,57 @@ class ConfigurationTests(unittest.TestCase):
         with patch.dict(os.environ, {**SETTINGS, "GITHUB_OWNER_ID": "octocat"}, clear=True):
             with self.assertRaises(ValueError):
                 Config.from_env()
+
+    def test_routes_and_oauth_metadata_are_consistent(self):
+        from starlette.testclient import TestClient
+
+        with patch.dict(os.environ, SETTINGS, clear=True):
+            gateway = build_server(Config.from_env())
+            app = gateway.http_app(path=MCP_PATH)
+
+        paths = {route.path for route in app.routes}
+        for path in (
+            "/MCP", "/auth/authorize", "/auth/token", "/auth/register",
+            "/auth/callback", "/auth/consent",
+            "/.well-known/oauth-authorization-server/auth",
+            "/.well-known/oauth-protected-resource/MCP",
+        ):
+            with self.subTest(path=path):
+                self.assertIn(path, paths)
+        for forbidden in ("/mcp", "/authorize", "/token", "/register"):
+            self.assertNotIn(forbidden, paths)
+
+        with TestClient(app) as client:
+            meta_response = client.get("/.well-known/oauth-authorization-server/auth")
+            self.assertEqual(meta_response.status_code, 200, meta_response.text)
+            metadata = meta_response.json()
+            self.assertEqual(metadata["issuer"], "https://mcp.example.com/auth")
+            for name, url in (
+                ("authorization_endpoint", "https://mcp.example.com/auth/authorize"),
+                ("token_endpoint", "https://mcp.example.com/auth/token"),
+                ("registration_endpoint", "https://mcp.example.com/auth/register"),
+            ):
+                self.assertEqual(metadata[name], url)
+
+            resource_response = client.get("/.well-known/oauth-protected-resource/MCP")
+            self.assertEqual(resource_response.status_code, 200, resource_response.text)
+            resource = resource_response.json()
+            self.assertEqual(resource["resource"], "https://mcp.example.com/MCP")
+            self.assertIn("https://mcp.example.com/auth", resource["authorization_servers"])
+            self.assertEqual(client.get("/mcp").status_code, 404)
+            body = {
+                "jsonrpc": "2.0", "id": 1, "method": "initialize",
+                "params": {
+                    "protocolVersion": "2025-03-26", "capabilities": {},
+                    "clientInfo": {"name": "test", "version": "1"},
+                },
+            }
+            denied = client.post(
+                "/MCP", json=body,
+                headers={"Accept": "application/json, text/event-stream"},
+            )
+            self.assertEqual(denied.status_code, 401)
+            self.assertIn("Bearer", denied.headers.get("WWW-Authenticate", ""))
 
     def test_only_fixed_node_subprocess(self):
         with patch.dict(os.environ, SETTINGS, clear=True):

@@ -35,7 +35,7 @@ if [ "$ready" != 1 ]; then
   exit 1
 fi
 status=$(curl --silent -o "$TMP" -w '%{http_code}' \
-  -X POST "http://127.0.0.1:$PORT/mcp" \
+  -X POST "http://127.0.0.1:$PORT/MCP" \
   -H 'Content-Type: application/json' \
   -H 'Accept: application/json, text/event-stream' \
   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1"}}}')
@@ -67,4 +67,10 @@ async def check():
 asyncio.run(check())
 PYTEST
 
-echo "PASS: one container within 384 MiB, OAuth 401, and upstream Node tool schemas"
+resource_status=$(curl --silent -o "$TMP" -w '%{http_code}' "http://127.0.0.1:$PORT/.well-known/oauth-protected-resource/MCP")
+if [ "$resource_status" != 200 ] || ! grep -q 'https://mcp.example.com/MCP' "$TMP"; then
+  cat "$TMP" >&2
+  echo "FAIL: OAuth MCP protected resource metadata ($resource_status)" >&2
+  exit 1
+fi
+echo "PASS: /MCP with OAuth /auth, 384 MiB, bearer 401 and bundled Node tools"
