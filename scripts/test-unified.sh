@@ -39,8 +39,8 @@ status=$(curl --silent -o "$TMP" -w '%{http_code}' \
   -H 'Content-Type: application/json' \
   -H 'Accept: application/json, text/event-stream' \
   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1"}}}')
-case "$status" in 401|403) ;; *) cat "$TMP" >&2; echo "FAIL: /mcp returned $status without OAuth token" >&2; exit 1;; esac
-status=$(curl --silent -o "$TMP" -w '%{http_code}' "http://127.0.0.1:$PORT/.well-known/oauth-authorization-server")
+case "$status" in 401|403) ;; *) cat "$TMP" >&2; echo "FAIL: /MCP returned $status without OAuth token" >&2; exit 1;; esac
+status=$(curl --silent -o "$TMP" -w '%{http_code}' "http://127.0.0.1:$PORT/.well-known/oauth-authorization-server/auth")
 if [ "$status" != 200 ] || ! grep -q 'authorization_endpoint' "$TMP"; then
   cat "$TMP" >&2
   echo "FAIL: OAuth discovery ($status)" >&2
