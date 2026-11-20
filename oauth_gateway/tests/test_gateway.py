@@ -64,12 +64,12 @@ class ConfigurationTests(unittest.TestCase):
     def test_only_fixed_node_subprocess(self):
         with patch.dict(os.environ, SETTINGS, clear=True):
             gateway = build_server(Config.from_env())
-        backend = gateway.provider.client_factory()
+        backend = gateway.client_factory()
         self.assertIsInstance(backend.transport, StdioTransport)
         self.assertEqual(backend.transport.command, "node")
         self.assertEqual(backend.transport.args, [UPSTREAM_SCRIPT])
         self.assertFalse(backend.transport.keep_alive)
-        self.assertFalse(backend.forward_incoming_headers)
+        self.assertFalse(backend._transport_options.forward_incoming_headers)
 
 
 class IdentityAndToolTests(unittest.IsolatedAsyncioTestCase):

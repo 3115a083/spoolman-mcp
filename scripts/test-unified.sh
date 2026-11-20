@@ -14,7 +14,7 @@ docker run -d --name "$NAME" \
   -p "127.0.0.1:$PORT:8080" \
   --read-only --user 10001:10001 --cap-drop ALL --security-opt no-new-privileges \
   --tmpfs /tmp:rw,nosuid,noexec,size=32m \
-  --mount type=tmpfs,destination=/data,tmpfs-mode=0700 \
+  --tmpfs /data:rw,nosuid,uid=10001,gid=10001,mode=0700 \
   -e PUBLIC_URL=https://mcp.example.com \
   -e SPOOLMAN_URL=http://127.0.0.1:7912 \
   -e GITHUB_CLIENT_ID=test-client \
