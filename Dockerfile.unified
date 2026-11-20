@@ -1,0 +1,35 @@
+# syntax=docker/dockerfile:1
+# Single runtime: FastMCP HTTP + GitHub OAuth; upstream Node MCP is stdio on demand.
+FROM node:24-bookworm-slim AS upstream-build
+RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /build
+ARG SPOOLMAN_UPSTREAM_SHA=18b511912f5d160bedbe0f5ec54217114e0653db
+RUN git init -q \
+    && git remote add origin https://github.com/Disane87/spoolman-mcp.git \
+    && git fetch --depth=1 --no-tags origin "$SPOOLMAN_UPSTREAM_SHA" \
+    && git checkout --detach FETCH_HEAD \
+    && npm ci --no-audit --no-fund \
+    && npm run build \
+    && npm prune --omit=dev --no-audit --no-fund
+
+FROM python:3.12-slim-bookworm
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 FASTMCP_HOME=/data
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libstdc++6 ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd -g 10001 mcp \
+    && useradd -u 10001 -g 10001 -d /data -s /usr/sbin/nologin mcp \
+    && mkdir -p /data /app/spoolman \
+    && chown 10001:10001 /data
+WORKDIR /app
+COPY --from=upstream-build /usr/local/bin/node /usr/local/bin/node
+COPY --from=upstream-build --chown=10001:10001 /build/dist /app/spoolman/dist
+COPY --from=upstream-build --chown=10001:10001 /build/node_modules /app/spoolman/node_modules
+COPY --from=upstream-build --chown=10001:10001 /build/package.json /app/spoolman/package.json
+COPY oauth_gateway/requirements.txt /app/requirements.txt
+RUN python -m pip install --no-cache-dir --disable-pip-version-check -r /app/requirements.txt
+COPY --chown=10001:10001 oauth_gateway/__init__.py oauth_gateway/app.py /app/oauth_gateway/
+USER 10001:10001
+EXPOSE 8080
+CMD ["python", "-m", "oauth_gateway.app"]
