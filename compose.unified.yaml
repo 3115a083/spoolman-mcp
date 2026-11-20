@@ -1,0 +1,47 @@
+# Staging: one container, one listener. MCP path /MCP, OAuth paths /auth/*.
+# Start on 18789 until you deliberately migrate the Pangolin target to it.
+# Do NOT stop the working original stack until OAuth is independently tested.
+services:
+  spoolman-mcp:
+    image: spoolman-mcp:unified-oauth
+    build:
+      context: .
+      dockerfile: Dockerfile.unified
+    restart: unless-stopped
+    init: true
+    ports:
+      - "127.0.0.1:${MCP_PORT:-18789}:8080"
+    environment:
+      PUBLIC_URL: ${PUBLIC_URL:?Set the existing external HTTPS origin}
+      SPOOLMAN_URL: ${SPOOLMAN_URL:?Set the existing Spoolman API URL}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:?Set GitHub OAuth client ID}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:?Set GitHub OAuth client secret}
+      GITHUB_OWNER_ID: ${GITHUB_OWNER_ID:?Set numeric GitHub user ID}
+      OAUTH_JWT_SIGNING_KEY: ${OAUTH_JWT_SIGNING_KEY:?Set random persistent signing key}
+      FASTMCP_HOME: /data
+      NODE_OPTIONS: "--max-old-space-size=128"
+    volumes:
+      - oauth_state:/data
+    read_only: true
+    user: "10001:10001"
+    tmpfs:
+      - /tmp:rw,nosuid,noexec,size=32m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 64
+    mem_limit: 384m
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - 'import urllib.request; assert urllib.request.urlopen("http://127.0.0.1:8080/healthz",timeout=3).status == 200'
+      interval: 30s
+      timeout: 5s
+      start_period: 40s
+      retries: 3
+
+volumes:
+  oauth_state:
