@@ -13,6 +13,7 @@ fi
 docker run -d --name "$NAME" \
   -p "127.0.0.1:$PORT:8080" \
   --read-only --user 10001:10001 --cap-drop ALL --security-opt no-new-privileges \
+  --memory=384m --pids-limit=64 \
   --tmpfs /tmp:rw,nosuid,noexec,size=32m \
   --tmpfs /data:rw,nosuid,uid=10001,gid=10001,mode=0700 \
   -e PUBLIC_URL=https://mcp.example.com \
@@ -45,4 +46,25 @@ if [ "$status" != 200 ] || ! grep -q 'authorization_endpoint' "$TMP"; then
   echo "FAIL: OAuth discovery ($status)" >&2
   exit 1
 fi
-echo "PASS: single HTTP listener, discovery, and unauthorized denial"
+# Check that the bundled Disane87 Node MCP server can be started on demand.
+# This only lists tool schemas and does not contact or modify Spoolman inventory.
+docker exec -i "$NAME" python - <<'PYTEST'
+import asyncio
+from fastmcp import Client
+from fastmcp.client.transports import StdioTransport
+
+async def check():
+    transport = StdioTransport(
+        command="node",
+        args=["/app/spoolman/dist/index.js"],
+        env={"SPOOLMAN_URL": "http://127.0.0.1:7912"},
+        keep_alive=False,
+    )
+    async with Client(transport, mode="legacy") as client:
+        tools = await client.list_tools()
+        names = {tool.name for tool in tools}
+        assert "spoolman_list_spools" in names, names
+asyncio.run(check())
+PYTEST
+
+echo "PASS: one container within 384 MiB, OAuth 401, and upstream Node tool schemas"
